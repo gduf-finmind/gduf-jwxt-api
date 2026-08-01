@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试、覆盖率与类型检查
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 本地示例与敏感信息
+captcha.jpg
+.env
+.env.*
+!.env.example
+
+# 编辑器与 IDE
+.idea/
+.vscode/
+*.swp
+*.sublime-workspace
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Codex 等代理工具的本地文件
+.codex/
+.agents/
+.codex-write-probe

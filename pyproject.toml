@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jwxtapi"
+version = "0.1.0"
+description = "广东金融学院综合教务系统同步 Python 客户端"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4>=4.12,<5",
+    "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+test = [
+    "build>=1.2",
+    "mypy>=1.10",
+    "pytest>=8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jwxtapi"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/jwxt 已校验接口.apifox.json",
+    "/实际请求返回数据.md",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["jwxtapi"]
