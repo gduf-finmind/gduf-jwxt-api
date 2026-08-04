@@ -74,6 +74,78 @@ class ClassroomSchedule(DataModel):
 
 
 @dataclass(frozen=True, slots=True)
+class StudentStudyWorkExperience(DataModel):
+    start_end: str | None
+    organization: str | None
+    position: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentFamilyMember(DataModel):
+    name: str | None
+    relationship: str | None
+    organization: str | None
+    position: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentStatusChange(DataModel):
+    category: str | None
+    reason: str | None
+    date: str | None
+    previous_department: str | None
+    previous_major: str | None
+    previous_grade: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentAward(DataModel):
+    year: str | None
+    name: str | None
+    issuer: str | None
+    level: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentDisciplinaryRecord(DataModel):
+    date: str | None
+    name: str | None
+    organization: str | None
+    reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StudentInfo(DataModel):
+    department: str | None
+    major: str | None
+    education_duration: str | None
+    class_name: str | None
+    student_id: str | None
+    name: str | None
+    gender: str | None
+    name_pinyin: str | None
+    birth_date: str | None
+    marital_status: str | None
+    major_direction: str | None
+    political_status: str | None
+    native_place: str | None
+    party_membership_date: str | None
+    ethnicity: str | None
+    study_form: str | None
+    education_level: str | None
+    foreign_language: str | None
+    railway_station: str | None
+    postal_code: str | None
+    enrollment_date: str | None
+    graduation_date: str | None
+    study_work_experiences: tuple[StudentStudyWorkExperience, ...]
+    family_members: tuple[StudentFamilyMember, ...]
+    status_changes: tuple[StudentStatusChange, ...]
+    awards: tuple[StudentAward, ...]
+    disciplinary_records: tuple[StudentDisciplinaryRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Grade(DataModel):
     index: int
     term: str

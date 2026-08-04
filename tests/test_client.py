@@ -87,6 +87,28 @@ def test_keep_alive_detects_expired_session() -> None:
     client.close()
 
 
+def test_get_student_info_requests_academic_card() -> None:
+    requests: list[httpx.Request] = []
+    html = """
+    <table id="xjkpTable">
+      <tr><td>院系：计算机学院</td><td>专业：软件工程</td><td>学制：4</td><td>班级：1班</td><td>学号：2024001</td></tr>
+      <tr><td>姓名</td><td>张三</td><td>性别</td><td>男</td></tr>
+    </table>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, text=html)
+
+    client = JwxtClient(transport=httpx.MockTransport(handler))
+    client._logged_in = True
+    info = client.get_student_info()
+    assert info.student_id == "2024001"
+    assert requests[0].method == "GET"
+    assert requests[0].url.path == "/jsxsd/grxx/xsxx"
+    client.close()
+
+
 def test_two_clients_keep_cookies_isolated_across_threads() -> None:
     seen: dict[str, str] = {}
     seen_lock = threading.Lock()
@@ -121,6 +143,45 @@ def test_term_and_range_validation() -> None:
         client.get_schedule("2025-2025-3")
     with pytest.raises(ValidationError):
         client.get_classroom_schedule("2025-2026-2", start_week=5, end_week=3)
+    client.close()
+
+
+def test_classroom_schedule_posts_all_page_form_fields() -> None:
+    requests: list[httpx.Request] = []
+    periods = "".join(f"<td>{period}</td>" for _ in range(7) for period in ("0102",))
+    html = f"""
+    <table id="kbtable"><tr><th></th></tr><tr><td>教室/节次</td>{periods}</tr></table>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/jsxsd/kbxx/initJc":
+            return httpx.Response(200, json={"mtdjs": 6})
+        return httpx.Response(200, text=html)
+
+    client = JwxtClient(transport=httpx.MockTransport(handler))
+    client._logged_in = True
+    client.get_classroom_schedule(
+        "2025-2026-2",
+        department="54",
+        campus="1",
+        building="b1",
+        start_week=1,
+        end_week=2,
+        start_period=1,
+        end_period=2,
+    )
+    form = parse_qs(requests[-1].content.decode(), keep_blank_values=True)
+    assert form == {
+        "xnxqh": ["2025-2026-2"],
+        "skyx": ["54"],
+        "xqid": ["1"],
+        "jzwid": ["b1"],
+        "zc1": ["1"],
+        "zc2": ["2"],
+        "jc1": ["01"],
+        "jc2": ["02"],
+    }
     client.close()
 
 

@@ -83,6 +83,7 @@ python -m pip install -e ".[test]"
 | `get_schedule(term, week=None)` | `Schedule` | 个人课表 |
 | `get_buildings(campus)` | `list[Option]` | 教学楼列表 |
 | `get_classroom_schedule(...)` | `ClassroomSchedule` | 教室课表 |
+| `get_student_info()` | `StudentInfo` | 当前学生学籍信息（已过滤隐私字段） |
 | `get_grades(extra_form=None)` | `GradeReport` | 全部成绩 |
 | `get_grade_detail(grade)` | `GradeDetail` | 单科成绩明细 |
 | `get_training_plan(extra_form=None)` | `TrainingPlan` | 培养方案 |
@@ -430,6 +431,26 @@ jwxtapi/
 - 成绩（`/jsxsd/kscj/cjcx_list`）与培养方案（`/jsxsd/pyfa/pyfa_query`）默认以空表单 POST 查询；若你的账号需要额外字段，请通过 `extra_form` 传入，并将浏览器 Network 中的 Form Data 反馈给项目。
 - 不提供异步客户端、验证码 OCR、后台自动保活与 Cookie 持久化。
 - 解析器依赖学校旧版 JSP 页面结构，页面改版后需要同步更新解析逻辑。
+
+### Student information
+
+`client.get_student_info()` sends `GET /jsxsd/grxx/xsxx` and parses the student's
+academic-card HTML into a typed `StudentInfo` model. It includes basic academic
+fields and non-empty study/work, family, status-change, award, and disciplinary
+records. Fields marked private by the source page, phone numbers, contact
+details, and the photo URL are deliberately omitted.
+
+The model exposes department, major, education duration, class, student ID,
+name, gender, pinyin, birth date, marital status, political status, native
+place, ethnicity, study form, education level, foreign language, railway
+station, postal code, enrollment date, graduation date, and the five typed
+record collections (`study_work_experiences`, `family_members`,
+`status_changes`, `awards`, and `disciplinary_records`).
+
+The classroom form has exactly these eight submitted fields: `xnxqh`, `skyx`,
+`xqid`, `jzwid`, `zc1`, `zc2`, `jc1`, and `jc2`. `campus` and `building` values
+come from the page and `/jsxsd/kbcx/getJxlByAjax`; they are values for those
+fields rather than additional request parameters.
 
 ## 📄 免责声明
 

@@ -3,6 +3,7 @@ from jwxtapi.parsers import (
     parse_grade_detail,
     parse_grades,
     parse_schedule,
+    parse_student_info,
     parse_training_plan,
     parse_weeks,
 )
@@ -86,3 +87,35 @@ def test_parse_training_plan() -> None:
     plan = parse_training_plan(html)
     assert plan.items[0].course_name == "计算机导论"
     assert plan.to_dict()["items"][0]["credit"] == "3"
+
+
+def test_parse_student_info_excludes_private_fields_and_parses_records() -> None:
+    html = """
+    <table id="xjkpTable">
+      <tr><td>院系：计算机学院</td><td>专业：软件工程</td><td>学制：4</td><td>班级：1班</td><td>学号：2024001</td></tr>
+      <tr><td>姓名</td><td>张三</td><td>性别</td><td>男</td><td>姓名拼音</td><td>Zhang San</td></tr>
+      <tr><td>本人电话</td><td>13800000000</td><td>家庭电话</td><td>该部分隐私不作为接口显示</td></tr>
+      <tr><td>入学日期</td><td>202409</td><td>毕业日期</td><td></td></tr>
+      <tr><td>学习及工作简历</td></tr>
+      <tr><td>起止年月</td><td>学校或工作单位</td><td>职务</td></tr>
+      <tr><td>2020-2024</td><td>某中学</td><td>学生</td></tr>
+      <tr><td>家庭成员情况</td></tr>
+      <tr><td>姓名</td><td>与本人关系</td><td>工作单位</td><td>职务</td></tr>
+      <tr><td>李四</td><td>父亲</td><td>某公司</td><td>职员</td></tr>
+      <tr><td>学籍变动情况</td></tr>
+      <tr><td>异动类别</td><td>异动原因</td><td>异动日期</td><td>原院系</td><td>原专业</td><td>原年级</td></tr>
+      <tr><td>奖励情况</td></tr>
+      <tr><td>奖励年度</td><td>奖励名称</td><td>颁奖单位</td><td>奖励等级</td></tr>
+      <tr><td>处分情况</td></tr>
+      <tr><td>处分日期</td><td>处分名称</td><td>处分单位</td><td>处分原因</td></tr>
+    </table>
+    """
+    info = parse_student_info(html)
+    assert info.name == "张三"
+    assert info.student_id == "2024001"
+    assert info.study_work_experiences[0].organization == "某中学"
+    assert info.family_members[0].relationship == "父亲"
+    payload = info.to_dict()
+    assert "本人电话" not in payload
+    assert "家庭电话" not in payload
+    assert "13800000000" not in str(payload)

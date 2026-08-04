@@ -14,6 +14,12 @@ from .models import (
     GradeReport,
     Schedule,
     ScheduleEntry,
+    StudentAward,
+    StudentDisciplinaryRecord,
+    StudentFamilyMember,
+    StudentInfo,
+    StudentStatusChange,
+    StudentStudyWorkExperience,
     TrainingPlan,
     TrainingPlanCourse,
 )
@@ -182,6 +188,142 @@ def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:
                 )
             slot += colspan
     return tuple(entries)
+
+
+def _student_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _clean(value)
+    if not cleaned or "隐私不作为接口显示" in cleaned:
+        return None
+    return cleaned
+
+
+def _student_label(value: str) -> str:
+    return re.sub(r"[\s：:]", "", value)
+
+
+def _student_labeled_values(table: Tag) -> dict[str, str | None]:
+    values: dict[str, str | None] = {}
+    for row in table.find_all("tr"):
+        # The later sections reuse labels such as “姓名”; only the first
+        # personal-information block belongs in this flat mapping.
+        if _student_label("学习及工作简历") in _student_label(row.get_text(" ", strip=True)):
+            break
+        cells = row.find_all(["td", "th"], recursive=False)
+        texts = [_clean(cell.get_text(" ", strip=True)) for cell in cells]
+        for index, text in enumerate(texts):
+            if not text:
+                continue
+            if "：" in text or ":" in text:
+                label, value = re.split(r"[：:]", text, maxsplit=1)
+                if _student_label(label):
+                    values[_student_label(label)] = _student_value(value)
+                continue
+            if index % 2:
+                continue
+            label = _student_label(text)
+            if index + 1 < len(texts):
+                values[label] = _student_value(texts[index + 1])
+    return values
+
+
+def _student_section_rows(table: Tag, heading: str, header_count: int) -> list[list[str | None]]:
+    rows = table.find_all("tr")
+    start = -1
+    for index, row in enumerate(rows):
+        if _student_label(heading) in _student_label(row.get_text(" ", strip=True)):
+            start = index
+            break
+    if start < 0:
+        return []
+    header_index = -1
+    for index in range(start + 1, len(rows)):
+        cells = rows[index].find_all(["td", "th"], recursive=False)
+        if len(cells) == header_count:
+            header_index = index
+            break
+    if header_index < 0:
+        return []
+    result: list[list[str | None]] = []
+    for row in rows[header_index + 1 :]:
+        text = _clean(row.get_text(" ", strip=True))
+        compact_text = _student_label(text)
+        if any(_student_label(marker) in compact_text for marker in ("学习及工作简历", "家庭成员情况", "学籍变动情况", "奖励情况", "处分情况")):
+            break
+        cells = row.find_all("td", recursive=False)
+        if len(cells) != header_count:
+            continue
+        values = [_student_value(cell.get_text(" ", strip=True)) for cell in cells]
+        if any(value is not None for value in values):
+            result.append(values)
+    return result
+
+
+def parse_student_info(html: str) -> StudentInfo:
+    soup = _soup(html)
+    table = soup.select_one("#xjkpTable")
+    if table is None:
+        raise ParseError("学生信息响应中缺少 #xjkpTable")
+    values = _student_labeled_values(table)
+    if not any(values.get(label) is not None for label in ("院系", "学号", "姓名")):
+        raise ParseError("学生信息表缺少基本学籍字段")
+
+    def get(*labels: str) -> str | None:
+        for label in labels:
+            value = values.get(_student_label(label))
+            if value is not None:
+                return value
+        return None
+
+    experiences = tuple(
+        StudentStudyWorkExperience(*row)
+        for row in _student_section_rows(table, "学习及工作简历", 3)
+    )
+    family_members = tuple(
+        StudentFamilyMember(*row)
+        for row in _student_section_rows(table, "家庭成员情况", 4)
+    )
+    status_changes = tuple(
+        StudentStatusChange(*row)
+        for row in _student_section_rows(table, "学籍变动情况", 6)
+    )
+    awards = tuple(
+        StudentAward(*row) for row in _student_section_rows(table, "奖励情况", 4)
+    )
+    disciplinary_records = tuple(
+        StudentDisciplinaryRecord(*row)
+        for row in _student_section_rows(table, "处分情况", 4)
+    )
+    return StudentInfo(
+        department=get("院系"),
+        major=get("专业"),
+        education_duration=get("学制"),
+        class_name=get("班级"),
+        student_id=get("学号"),
+        name=get("姓名"),
+        gender=get("性别"),
+        name_pinyin=get("姓名拼音"),
+        birth_date=get("出生日期"),
+        marital_status=get("婚否"),
+        major_direction=get("专业方向"),
+        political_status=get("政治面貌"),
+        native_place=get("籍贯"),
+        party_membership_date=get("入党团时间"),
+        ethnicity=get("民族"),
+        study_form=get("学习形式"),
+        education_level=get("学习层次"),
+        foreign_language=get("外语种类"),
+        railway_station=get("下车火车站"),
+        postal_code=get("邮政编码"),
+        enrollment_date=get("入学日期"),
+        graduation_date=get("毕业日期"),
+        study_work_experiences=experiences,
+        family_members=family_members,
+        status_changes=status_changes,
+        awards=awards,
+        disciplinary_records=disciplinary_records,
+    )
 
 
 def _data_rows(html: str, expected_headers: Iterable[str]) -> tuple[BeautifulSoup, list[Tag]]:

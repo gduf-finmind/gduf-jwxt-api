@@ -27,6 +27,7 @@ from .models import (
     LoginResult,
     Option,
     Schedule,
+    StudentInfo,
     TrainingPlan,
 )
 from .parsers import (
@@ -34,6 +35,7 @@ from .parsers import (
     parse_grade_detail,
     parse_grades,
     parse_schedule,
+    parse_student_info,
     parse_training_plan,
 )
 
@@ -133,6 +135,14 @@ class JwxtClient:
             response = self._request("GET", "/jsxsd/framework/blankPage.jsp", follow_redirects=True)
             self._raise_if_session_expired(response)
             return True
+
+    def get_student_info(self) -> StudentInfo:
+        """获取当前登录学生的学籍卡片信息（不包含隐私字段）。"""
+        with self._lock:
+            self._require_login()
+            response = self._request("GET", "/jsxsd/grxx/xsxx", follow_redirects=True)
+            self._raise_if_session_expired(response)
+            return parse_student_info(response.text)
 
     def logout(self) -> None:
         with self._lock:
