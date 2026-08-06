@@ -66,5 +66,5 @@ jobs:
 
       - name: Smoke-test the wheel
         run: |
-          python -m pip install --no-deps --force-reinstall dist/*.whl
+          python -m pip install --force-reinstall dist/*.whl
           python -c "from jwxtapi import JwxtClient; print(JwxtClient)"
