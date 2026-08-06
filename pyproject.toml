@@ -3,15 +3,38 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "jwxtapi"
+name = "gduf-jwxt-api"
 version = "0.1.0"
 description = "广东金融学院综合教务系统同步 Python 客户端"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "LiangJZ1" },
+]
+keywords = ["gduf", "jwxt", "education", "api-client"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
 dependencies = [
     "beautifulsoup4>=4.12,<5",
     "httpx>=0.27,<1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/LiangJZ1/gduf-jwxt-api"
+Repository = "https://github.com/LiangJZ1/gduf-jwxt-api"
+Issues = "https://github.com/LiangJZ1/gduf-jwxt-api/issues"
 
 [project.optional-dependencies]
 test = [

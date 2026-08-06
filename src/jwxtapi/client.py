@@ -59,7 +59,7 @@ class JwxtClient:
             follow_redirects=False,
             transport=transport,
             headers={
-                "User-Agent": "jwxtapi/0.1 (+https://jwxt.gduf.edu.cn)",
+                "User-Agent": "gduf-jwxt-api/0.1 (+https://github.com/LiangJZ1/gduf-jwxt-api)",
                 "Accept-Language": "zh-CN,zh;q=0.9",
             },
         )

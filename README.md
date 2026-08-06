@@ -1,8 +1,8 @@
-# jwxtapi
+# gduf-jwxt-api
 
 > 广东金融学院综合教务管理系统的同步 Python 客户端：封装验证码登录、会话保持与旧版 JSP 页面解析，返回类型化的数据对象。
 
-[✨ 特性](#特性) · [🚀 快速开始](#快速开始) · [📦 安装](#安装) · [🧭 API 参考](#api-参考) · [⚠️ 异常处理](#异常处理) · [🧵 并发与多用户](#并发与多用户) · [🧪 开发与测试](#开发与测试) · [📁 项目结构](#项目结构) · [📌 已知限制](#已知限制) · [📄 免责声明](#免责声明)
+[✨ 特性](#特性) · [🚀 快速开始](#快速开始) · [📦 安装](#安装) · [🧭 API 参考](#api-参考) · [⚠️ 异常处理](#异常处理) · [🧵 并发与多用户](#并发与多用户) · [🧪 开发与测试](#开发与测试) · [📁 项目结构](#项目结构) · [📌 已知限制](#已知限制) · [📄 许可证](#许可证) · [📄 免责声明](#免责声明)
 
 ---
 
@@ -20,7 +20,7 @@
 ## 🚀 快速开始
 
 ```bash
-python -m pip install -e .
+python -m pip install gduf-jwxt-api
 ```
 
 ```python
@@ -54,7 +54,10 @@ with JwxtClient(timeout=15.0) as client:
 - 运行依赖：`httpx`、`beautifulsoup4`
 
 ```bash
-# 可编辑安装（直接使用源码，适合本项目）
+# 从 PyPI 安装
+python -m pip install gduf-jwxt-api
+
+# 可编辑安装（直接使用源码，适合参与开发）
 python -m pip install -e .
 
 # 含测试与开发依赖（pytest、mypy、build）
@@ -416,7 +419,7 @@ python -m build        # 构建 wheel 与 sdist
 ## 📁 项目结构
 
 ```text
-jwxtapi/
+gduf-jwxt-api/
 ├── src/jwxtapi/
 │   ├── client.py        # JwxtClient：登录、会话与全部查询
 │   ├── models.py        # 冻结 dataclass 数据模型
@@ -451,6 +454,10 @@ The classroom form has exactly these eight submitted fields: `xnxqh`, `skyx`,
 `xqid`, `jzwid`, `zc1`, `zc2`, `jc1`, and `jc2`. `campus` and `building` values
 come from the page and `/jsxsd/kbcx/getJxlByAjax`; they are values for those
 fields rather than additional request parameters.
+
+## 📄 许可证
+
+本项目采用 [MIT License](LICENSE) 开源。
 
 ## 📄 免责声明
 
