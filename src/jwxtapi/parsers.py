@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 from .exceptions import ParseError
 from .models import (
     ClassroomEntry,
+    ClassroomGrid,
     Grade,
     GradeDetail,
     GradeReport,
@@ -135,7 +136,7 @@ def parse_schedule(html: str, requested_term: str, requested_week: int | None) -
     return Schedule(selected_term, requested_week, tuple(entries), remarks)
 
 
-def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:
+def _classroom_grid_parts(html: str) -> tuple[list[str], list[ClassroomEntry]]:
     soup = _soup(html)
     table = soup.select_one("#kbtable")
     if table is None:
@@ -143,21 +144,41 @@ def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:
     rows = table.select("tr")
     if len(rows) < 2:
         raise ParseError("教室课表缺少星期或节次表头")
+
+    weekday_cells = rows[0].find_all(["td", "th"], recursive=False)[1:]
     period_cells = rows[1].find_all(["td", "th"], recursive=False)[1:]
+    if (
+        len(weekday_cells) != 7
+        or any(not _cell_text(cell) for cell in weekday_cells)
+        or not period_cells
+        or any(not _cell_text(cell) for cell in period_cells)
+    ):
+        raise ParseError("教室课表缺少星期或节次表头")
     all_periods = [_cell_text(cell) for cell in period_cells]
-    if not all_periods or len(all_periods) % 7 != 0:
+    if len(all_periods) % 7 != 0:
         raise ParseError("教室课表节次列数量无效")
     periods_per_day = len(all_periods) // 7
     period_names = all_periods[:periods_per_day]
+    classrooms: list[str] = []
     entries: list[ClassroomEntry] = []
     for row in rows[2:]:
-        cells = row.find_all("td", recursive=False)
+        cells = row.find_all(["td", "th"], recursive=False)
         if not cells:
             continue
         classroom = _cell_text(cells[0])
+        classrooms.append(classroom)
         slot = 0
         for cell in cells[1:]:
-            colspan = int(str(cell.get("colspan", "1")))
+            try:
+                colspan = int(str(cell.get("colspan", "1")))
+            except ValueError as exc:
+                raise ParseError("教室课表单元格 colspan 无效") from exc
+            if (
+                colspan < 1
+                or slot >= len(all_periods)
+                or slot + colspan > len(all_periods)
+            ):
+                raise ParseError("教室课表单元格超出节次网格")
             weekday = slot // periods_per_day + 1
             period = period_names[slot % periods_per_day]
             for content in cell.select("div.kbcontent1, div.kbcontent"):
@@ -187,7 +208,19 @@ def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:
                     )
                 )
             slot += colspan
+    return classrooms, entries
+
+
+def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:
+    """解析教室课表中的课程占用条目，保留原有返回结构。"""
+    _, entries = _classroom_grid_parts(html)
     return tuple(entries)
+
+
+def parse_classroom_grid(html: str) -> ClassroomGrid:
+    """解析教室课表中的全量教室清单和课程占用条目。"""
+    classrooms, entries = _classroom_grid_parts(html)
+    return ClassroomGrid(tuple(classrooms), tuple(entries))
 
 
 def _student_value(value: str | None) -> str | None:

@@ -10,6 +10,7 @@ import pytest
 from jwxtapi import (
     AuthenticationError,
     CaptchaError,
+    ClassroomGrid,
     JwxtClient,
     SessionExpiredError,
     ValidationError,
@@ -19,6 +20,14 @@ from jwxtapi import (
 LOGIN = '<form action="/jsxsd/xk/LoginToXk"><input id="userAccount"><input name="RANDOMCODE">用户登录</form>'
 HOME = "<html><title>学生个人中心</title></html>"
 BLANK = "<html></html>"
+CLASSROOM_GRID_HTML = """
+<table id="kbtable">
+<tr><th></th><th>星期一</th><th>星期二</th><th>星期三</th><th>星期四</th><th>星期五</th><th>星期六</th><th>星期日</th></tr>
+<tr><td>教室/节次</td><td>0102</td><td>0102</td><td>0102</td><td>0102</td><td>0102</td><td>0102</td><td>0102</td></tr>
+<tr><td>清远敏学102</td><td><div class="kbcontent1">设计模式<br>叶东东<br>1-16周<br>软件工程1班</div></td><td colspan="6"></td></tr>
+<tr><td>清远敏学103</td><td colspan="7"></td></tr>
+</table>
+"""
 GRADE_HTML = """
 <table id="dataList">
 <tr><th>序号</th><th>开课学期</th><th>课程编号</th><th>课程名称</th><th>成绩</th><th>学分</th><th>总学时</th><th>绩点</th><th>考核方式</th><th>课程属性</th><th>课程性质</th></tr>
@@ -149,8 +158,9 @@ def test_term_and_range_validation() -> None:
 def test_classroom_schedule_posts_all_page_form_fields() -> None:
     requests: list[httpx.Request] = []
     periods = "".join(f"<td>{period}</td>" for _ in range(7) for period in ("0102",))
+    weekdays = "".join(f"<th>星期{day}</th>" for day in "一二三四五六日")
     html = f"""
-    <table id="kbtable"><tr><th></th></tr><tr><td>教室/节次</td>{periods}</tr></table>
+    <table id="kbtable"><tr><th></th>{weekdays}</tr><tr><td>教室/节次</td>{periods}</tr></table>
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -182,6 +192,116 @@ def test_classroom_schedule_posts_all_page_form_fields() -> None:
         "jc1": ["01"],
         "jc2": ["02"],
     }
+    client.close()
+
+
+def test_classroom_grid_posts_form_and_returns_all_classrooms() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/jsxsd/kbxx/initJc":
+            return httpx.Response(200, json={"mtdjs": 6})
+        return httpx.Response(200, text=CLASSROOM_GRID_HTML)
+
+    client = JwxtClient(transport=httpx.MockTransport(handler))
+    client._logged_in = True
+    grid = client.get_classroom_grid(
+        "2025-2026-2",
+        department="54",
+        campus="r0",
+        building="mx",
+        start_week=3,
+        end_week=None,
+        start_period=1,
+        end_period=10,
+    )
+    assert isinstance(grid, ClassroomGrid)
+    assert grid.classrooms == ("清远敏学102", "清远敏学103")
+    assert len(grid.entries) == 1
+    assert requests[-1].method == "POST"
+    assert requests[-1].url.path == "/jsxsd/kbcx/kbxx_classroom_ifr"
+    assert parse_qs(requests[-1].content.decode(), keep_blank_values=True) == {
+        "xnxqh": ["2025-2026-2"],
+        "skyx": ["54"],
+        "xqid": ["r0"],
+        "jzwid": ["mx"],
+        "zc1": ["3"],
+        "zc2": [""],
+        "jc1": ["01"],
+        "jc2": ["10"],
+    }
+    client.close()
+
+
+def test_classroom_grid_login_validation_and_expired_session() -> None:
+    client = JwxtClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    with pytest.raises(SessionExpiredError):
+        client.get_classroom_grid("2025-2026-2")
+    client._logged_in = True
+    with pytest.raises(ValidationError):
+        client.get_classroom_grid("2025-2025-2")
+    with pytest.raises(ValidationError):
+        client.get_classroom_grid("2025-2026-2", start_week=6, end_week=5)
+    client.close()
+
+    def period_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/jsxsd/kbxx/initJc":
+            return httpx.Response(200, json={"mtdjs": 6})
+        return httpx.Response(200, text=CLASSROOM_GRID_HTML)
+
+    invalid_period = JwxtClient(transport=httpx.MockTransport(period_handler))
+    invalid_period._logged_in = True
+    with pytest.raises(ValidationError):
+        invalid_period.get_classroom_grid("2025-2026-2", start_period=13)
+    invalid_period.close()
+
+    expired = JwxtClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=LOGIN))
+    )
+    expired._logged_in = True
+    with pytest.raises(SessionExpiredError):
+        expired.get_classroom_grid("2025-2026-2")
+    assert not expired.is_logged_in
+    expired.close()
+
+
+def test_ssl_verification_is_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[bool] = []
+
+    def make_transport(*, verify: bool) -> httpx.MockTransport:
+        seen.append(verify)
+        return httpx.MockTransport(lambda request: httpx.Response(200))
+
+    monkeypatch.setattr(httpx, "HTTPTransport", make_transport)
+    client = JwxtClient()
+    assert seen == [True]
+    client.close()
+
+
+def test_ssl_verification_can_be_explicitly_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[bool] = []
+
+    def make_transport(*, verify: bool) -> httpx.MockTransport:
+        seen.append(verify)
+        return httpx.MockTransport(lambda request: httpx.Response(200))
+
+    monkeypatch.setattr(httpx, "HTTPTransport", make_transport)
+    client = JwxtClient(verify_ssl=False)
+    assert seen == [False]
+    client.close()
+
+
+def test_custom_transport_is_preserved_without_creating_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_to_create_transport(*, verify: bool) -> httpx.BaseTransport:
+        raise AssertionError(f"unexpected default transport with verify={verify}")
+
+    custom = httpx.MockTransport(lambda request: httpx.Response(200))
+    monkeypatch.setattr(httpx, "HTTPTransport", fail_to_create_transport)
+    client = JwxtClient(verify_ssl=False, transport=custom)
+    assert client._client._transport is custom
     client.close()
 
 

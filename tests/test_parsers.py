@@ -1,5 +1,9 @@
+import pytest
+
+from jwxtapi import ParseError
 from jwxtapi.parsers import (
     parse_classroom_entries,
+    parse_classroom_grid,
     parse_grade_detail,
     parse_grades,
     parse_schedule,
@@ -36,22 +40,67 @@ def test_parse_personal_schedule() -> None:
     assert schedule.items[0].weeks == tuple(range(1, 17))
 
 
-def test_parse_classroom_schedule_grid() -> None:
+def _classroom_grid_html() -> str:
     periods = "".join(f"<td>{period}</td>" for _ in range(7) for period in ("0102", "0304"))
-    empty = "<td>&nbsp;</td>" * 13
-    html = f"""
+    weekdays = "".join(f'<th colspan="2">星期{day}</th>' for day in "一二三四五六日")
+    return f"""
     <table id="kbtable">
-      <tr><th></th>{''.join('<th colspan="2">星期</th>' for _ in range(7))}</tr>
+      <tr><th></th>{weekdays}</tr>
       <tr><td>教室\\节次</td>{periods}</tr>
-      <tr><td>清远敏学102</td>{empty}<td><div class="kbcontent1">设计模式<br>叶东东<br>(1-16周)<br>软件工程1班</div></td></tr>
+      <tr><td>清远敏学102</td><td colspan="5"></td><td colspan="2">
+        <div class="kbcontent1">设计模式<br>叶东东<br>(1-16周)<br>软件工程1班</div>
+        <div class="kbcontent">软件测试<br>李老师<br>2-8双周<br>软件工程2班</div>
+      </td><td colspan="7"></td></tr>
+      <tr><td>清远敏学103</td><td colspan="14">&nbsp;</td></tr>
     </table>
     """
+
+
+def test_parse_classroom_grid_includes_free_rooms_and_maps_colspan() -> None:
+    html = _classroom_grid_html()
+    grid = parse_classroom_grid(html)
+    assert grid.classrooms == ("清远敏学102", "清远敏学103")
+    assert len(grid.entries) == 2
+    assert {entry.classroom for entry in grid.entries} == {"清远敏学102"}
+    assert grid.entries[0].weekday == 3
+    assert grid.entries[0].period == "0304"
+    assert grid.entries[0].teacher == "叶东东"
+    assert grid.entries[0].class_name == "软件工程1班"
+    assert grid.entries[1].weeks == (2, 4, 6, 8)
+    assert grid.to_dict()["classrooms"] == ("清远敏学102", "清远敏学103")
+
+
+def test_parse_classroom_entries_remains_occupancy_only() -> None:
+    html = _classroom_grid_html()
     items = parse_classroom_entries(html)
-    assert len(items) == 1
-    assert items[0].weekday == 7
+    assert items == parse_classroom_grid(html).entries
+    assert len(items) == 2
+    assert items[0].weekday == 3
     assert items[0].period == "0304"
     assert items[0].teacher == "叶东东"
     assert items[0].class_name == "软件工程1班"
+
+
+def test_parse_classroom_grid_requires_kbtable() -> None:
+    with pytest.raises(ParseError):
+        parse_classroom_grid("<html></html>")
+
+
+def test_parse_classroom_grid_requires_weekday_and_period_headers() -> None:
+    with pytest.raises(ParseError):
+        parse_classroom_grid('<table id="kbtable"><tr><th></th></tr></table>')
+    periods = "".join("<td>0102</td>" for _ in range(7))
+    html = f'<table id="kbtable"><tr><th></th></tr><tr><td>教室</td>{periods}</tr></table>'
+    with pytest.raises(ParseError):
+        parse_classroom_grid(html)
+
+
+def test_parse_classroom_grid_rejects_period_count_not_divisible_by_seven() -> None:
+    weekdays = "".join(f"<th>星期{day}</th>" for day in "一二三四五六日")
+    periods = "".join("<td>0102</td>" for _ in range(8))
+    html = f'<table id="kbtable"><tr><th></th>{weekdays}</tr><tr><td>教室</td>{periods}</tr></table>'
+    with pytest.raises(ParseError):
+        parse_classroom_grid(html)
 
 
 def test_parse_grades_and_detail_link() -> None:

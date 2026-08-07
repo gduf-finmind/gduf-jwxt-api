@@ -20,6 +20,7 @@ from .exceptions import (
 )
 from .models import (
     CaptchaImage,
+    ClassroomGrid,
     ClassroomSchedule,
     Grade,
     GradeDetail,
@@ -32,6 +33,7 @@ from .models import (
 )
 from .parsers import (
     parse_classroom_entries,
+    parse_classroom_grid,
     parse_grade_detail,
     parse_grades,
     parse_schedule,
@@ -48,18 +50,22 @@ class JwxtClient:
         base_url: str = "https://jwxt.gduf.edu.cn",
         timeout: float = 15.0,
         *,
+        verify_ssl: bool = True,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         if timeout <= 0:
             raise ValidationError("timeout 必须大于 0")
         self._lock = threading.RLock()
+        effective_transport = (
+            transport if transport is not None else httpx.HTTPTransport(verify=verify_ssl)
+        )
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout,
             follow_redirects=False,
-            transport=transport,
+            transport=effective_transport,
             headers={
-                "User-Agent": "gduf-jwxt-api/0.1 (+https://github.com/LiangJZ1/gduf-jwxt-api)",
+                "User-Agent": "gduf-jwxt-api/0.2.0 (+https://github.com/LiangJZ1/gduf-jwxt-api)",
                 "Accept-Language": "zh-CN,zh;q=0.9",
             },
         )
@@ -222,27 +228,16 @@ class JwxtClient:
         end_period: int | None = None,
     ) -> ClassroomSchedule:
         with self._lock:
-            self._require_login()
-            self._validate_term(term)
-            self._validate_range("周次", start_week, end_week, 30)
-            max_period = self._get_max_period(term) if start_period is not None or end_period is not None else 99
-            self._validate_range("节次", start_period, end_period, max_period)
-            response = self._request(
-                "POST",
-                "/jsxsd/kbcx/kbxx_classroom_ifr",
-                data={
-                    "xnxqh": term,
-                    "skyx": department,
-                    "xqid": campus,
-                    "jzwid": building,
-                    "zc1": "" if start_week is None else str(start_week),
-                    "zc2": "" if end_week is None else str(end_week),
-                    "jc1": "" if start_period is None else f"{start_period:02d}",
-                    "jc2": "" if end_period is None else f"{end_period:02d}",
-                },
-                follow_redirects=True,
+            html = self._get_classroom_html(
+                term,
+                department,
+                campus,
+                building,
+                start_week,
+                end_week,
+                start_period,
+                end_period,
             )
-            self._raise_if_session_expired(response)
             return ClassroomSchedule(
                 term=term,
                 department=department,
@@ -252,8 +247,32 @@ class JwxtClient:
                 end_week=end_week,
                 start_period=start_period,
                 end_period=end_period,
-                items=parse_classroom_entries(response.text),
+                items=parse_classroom_entries(html),
             )
+
+    def get_classroom_grid(
+        self,
+        term: str,
+        department: str = "",
+        campus: str = "",
+        building: str = "",
+        start_week: int | None = None,
+        end_week: int | None = None,
+        start_period: int | None = None,
+        end_period: int | None = None,
+    ) -> ClassroomGrid:
+        with self._lock:
+            html = self._get_classroom_html(
+                term,
+                department,
+                campus,
+                building,
+                start_week,
+                end_week,
+                start_period,
+                end_period,
+            )
+            return parse_classroom_grid(html)
 
     def get_grades(self, extra_form: Mapping[str, str] | None = None) -> GradeReport:
         with self._lock:
@@ -322,6 +341,44 @@ class JwxtClient:
         if maximum <= 0:
             raise ParseError("节次初始化接口返回的最大节次无效")
         return maximum
+
+    def _get_classroom_html(
+        self,
+        term: str,
+        department: str,
+        campus: str,
+        building: str,
+        start_week: int | None,
+        end_week: int | None,
+        start_period: int | None,
+        end_period: int | None,
+    ) -> str:
+        self._require_login()
+        self._validate_term(term)
+        self._validate_range("周次", start_week, end_week, 30)
+        max_period = (
+            self._get_max_period(term)
+            if start_period is not None or end_period is not None
+            else 99
+        )
+        self._validate_range("节次", start_period, end_period, max_period)
+        response = self._request(
+            "POST",
+            "/jsxsd/kbcx/kbxx_classroom_ifr",
+            data={
+                "xnxqh": term,
+                "skyx": department,
+                "xqid": campus,
+                "jzwid": building,
+                "zc1": "" if start_week is None else str(start_week),
+                "zc2": "" if end_week is None else str(end_week),
+                "jc1": "" if start_period is None else f"{start_period:02d}",
+                "jc2": "" if end_period is None else f"{end_period:02d}",
+            },
+            follow_redirects=True,
+        )
+        self._raise_if_session_expired(response)
+        return response.text
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         self._ensure_open()

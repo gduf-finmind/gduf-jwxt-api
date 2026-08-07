@@ -11,6 +11,7 @@ from .exceptions import (
 from .models import (
     CaptchaImage,
     ClassroomEntry,
+    ClassroomGrid,
     ClassroomSchedule,
     Grade,
     GradeDetail,
@@ -34,6 +35,7 @@ __all__ = [
     "CaptchaError",
     "CaptchaImage",
     "ClassroomEntry",
+    "ClassroomGrid",
     "ClassroomSchedule",
     "Grade",
     "GradeDetail",

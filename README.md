@@ -12,7 +12,7 @@
 | --- | --- |
 | 🔐 登录封装 | 验证码会话、凭据编码、学生主页二次校验，一个方法完成登录 |
 | 🍪 会话管理 | Cookie 自动保持，提供 `keep_alive()` 手动保活、`logout()` 安全退出 |
-| 📚 常用查询 | 个人课表、教室课表、成绩、成绩明细、培养方案、教学楼 |
+| 📚 常用查询 | 个人课表、教室课表、教室网格与空闲教室、学生信息、成绩、成绩明细、培养方案、教学楼 |
 | 🧱 类型化输出 | 全部返回冻结 dataclass，可 `to_dict()` 递归转字典 |
 | 🧵 多用户隔离 | 一个实例对应一个账号，实例内请求由可重入锁串行保护 |
 | 🛡️ 明确失败 | 统一 `JwxtError` 异常体系，解析失败显式抛出，不静默降级 |
@@ -86,6 +86,7 @@ python -m pip install -e ".[test]"
 | `get_schedule(term, week=None)` | `Schedule` | 个人课表 |
 | `get_buildings(campus)` | `list[Option]` | 教学楼列表 |
 | `get_classroom_schedule(...)` | `ClassroomSchedule` | 教室课表 |
+| `get_classroom_grid(...)` | `ClassroomGrid` | 全量教室清单与课程占用网格 |
 | `get_student_info()` | `StudentInfo` | 当前学生学籍信息（已过滤隐私字段） |
 | `get_grades(extra_form=None)` | `GradeReport` | 全部成绩 |
 | `get_grade_detail(grade)` | `GradeDetail` | 单科成绩明细 |
@@ -93,7 +94,7 @@ python -m pip install -e ".[test]"
 
 ### 构造与生命周期
 
-#### `JwxtClient(base_url="https://jwxt.gduf.edu.cn", timeout=15.0, *, transport=None)`
+#### `JwxtClient(base_url="https://jwxt.gduf.edu.cn", timeout=15.0, *, verify_ssl=True, transport=None)`
 
 构造时只初始化 HTTP 客户端，**不发起任何网络请求**。
 
@@ -101,7 +102,15 @@ python -m pip install -e ".[test]"
 | --- | --- | --- | --- |
 | `base_url` | `str` | `https://jwxt.gduf.edu.cn` | 教务系统根地址，一般无需修改 |
 | `timeout` | `float` | `15.0` | 单个请求的超时秒数；必须 > 0，否则抛 `ValidationError` |
-| `transport` | `httpx.BaseTransport \| None` | `None` | 仅测试用，可注入 `httpx.MockTransport` |
+| `verify_ssl` | `bool` | `True` | 是否校验 HTTPS 证书和主机名 |
+| `transport` | `httpx.BaseTransport \| None` | `None` | 自定义 HTTP transport；传入后会原样保留，可用于 `httpx.MockTransport` 测试 |
+
+> ⚠️ `verify_ssl=False` 会跳过证书和主机名校验，可能使连接遭受中间人攻击。它只应用于存在已知证书兼容问题、且你确认可信的教务系统；不应成为普通 HTTPS 请求的默认做法。传入自定义 `transport` 时，transport 自身负责 TLS 配置，`verify_ssl` 不会替换或改写它。
+
+```python
+# 仅在确认目标教务系统可信且确有证书兼容问题时使用
+client = JwxtClient(verify_ssl=False)
+```
 
 - `close()`：关闭连接池并清空会话；上下文管理器退出时自动调用，重复调用安全。
 - `is_logged_in -> bool`：当前实例是否已登录。
@@ -249,6 +258,34 @@ python -m pip install -e ".[test]"
 | `weeks` | `tuple[int, ...]` | 解析后的周次 |
 | `class_name` | `str \| None` | 班级 |
 | `raw_text` | `str` | 单元格原始文本，便于排查解析问题 |
+
+**异常**：`SessionExpiredError`、`ValidationError`（范围非法或开始值大于结束值）、`ParseError`、`RequestError`。
+
+#### `get_classroom_grid(term, department="", campus="", building="", start_week=None, end_week=None, start_period=None, end_period=None) -> ClassroomGrid`
+
+参数、校验、请求地址和筛选行为与 `get_classroom_schedule()` 一致，但返回的 `ClassroomGrid` 同时保留无课程的教室，可用于计算空闲教室：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `classrooms` | `tuple[str, ...]` | 查询结果页中的全量教室，包含没有课程占用的教室 |
+| `entries` | `tuple[ClassroomEntry, ...]` | 课程占用条目；字段结构与上文 `ClassroomEntry` 相同 |
+
+```python
+grid = client.get_classroom_grid(
+    "2025-2026-2",
+    campus="r0",
+    building="教学楼代码",
+    start_week=1,
+    end_week=1,
+    start_period=1,
+    end_period=2,
+)
+occupied = {entry.classroom for entry in grid.entries}
+free_classrooms = tuple(room for room in grid.classrooms if room not in occupied)
+print(free_classrooms)
+```
+
+`ClassroomGrid` 继承现有 `DataModel`，因此 `grid.to_dict()` 会递归序列化教室清单和每个占用条目。
 
 **异常**：`SessionExpiredError`、`ValidationError`（范围非法或开始值大于结束值）、`ParseError`、`RequestError`。
 
@@ -412,7 +449,7 @@ with ThreadPoolExecutor(max_workers=2) as pool:
 
 ```bash
 pytest                 # 运行全部测试（MockTransport 离线模拟，无需真实账号）
-mypy                   # strict 类型检查
+mypy src/jwxtapi       # strict 类型检查
 python -m build        # 构建 wheel 与 sdist
 ```
 
@@ -450,7 +487,7 @@ station, postal code, enrollment date, graduation date, and the five typed
 record collections (`study_work_experiences`, `family_members`,
 `status_changes`, `awards`, and `disciplinary_records`).
 
-The classroom form has exactly these eight submitted fields: `xnxqh`, `skyx`,
+Both classroom query methods submit exactly these eight form fields: `xnxqh`, `skyx`,
 `xqid`, `jzwid`, `zc1`, `zc2`, `jc1`, and `jc2`. `campus` and `building` values
 come from the page and `/jsxsd/kbcx/getJxlByAjax`; they are values for those
 fields rather than additional request parameters.

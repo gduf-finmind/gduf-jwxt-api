@@ -61,6 +61,14 @@ class ClassroomEntry(DataModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ClassroomGrid(DataModel):
+    """教室课表网格：全量教室清单和课程占用条目。"""
+
+    classrooms: tuple[str, ...]
+    entries: tuple[ClassroomEntry, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ClassroomSchedule(DataModel):
     term: str
     department: str
