@@ -472,25 +472,6 @@ gduf-jwxt-api/
 - 不提供异步客户端、验证码 OCR、后台自动保活与 Cookie 持久化。
 - 解析器依赖学校旧版 JSP 页面结构，页面改版后需要同步更新解析逻辑。
 
-### Student information
-
-`client.get_student_info()` sends `GET /jsxsd/grxx/xsxx` and parses the student's
-academic-card HTML into a typed `StudentInfo` model. It includes basic academic
-fields and non-empty study/work, family, status-change, award, and disciplinary
-records. Fields marked private by the source page, phone numbers, contact
-details, and the photo URL are deliberately omitted.
-
-The model exposes department, major, education duration, class, student ID,
-name, gender, pinyin, birth date, marital status, political status, native
-place, ethnicity, study form, education level, foreign language, railway
-station, postal code, enrollment date, graduation date, and the five typed
-record collections (`study_work_experiences`, `family_members`,
-`status_changes`, `awards`, and `disciplinary_records`).
-
-Both classroom query methods submit exactly these eight form fields: `xnxqh`, `skyx`,
-`xqid`, `jzwid`, `zc1`, `zc2`, `jc1`, and `jc2`. `campus` and `building` values
-come from the page and `/jsxsd/kbcx/getJxlByAjax`; they are values for those
-fields rather than additional request parameters.
 
 ## 📄 许可证
 
