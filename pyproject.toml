@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gduf-jwxt-api"
-version = "0.2.0"
+version = "0.3.0"
 description = "广东金融学院综合教务系统同步 Python 客户端"
 readme = "README.md"
 requires-python = ">=3.10"

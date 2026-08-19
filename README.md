@@ -11,7 +11,7 @@
 | 类别 | 说明 |
 | --- | --- |
 | 🔐 登录封装 | 验证码会话、凭据编码、学生主页二次校验，一个方法完成登录 |
-| 🍪 会话管理 | Cookie 自动保持，提供 `keep_alive()` 手动保活、`logout()` 安全退出 |
+| 🍪 会话管理 | Cookie 自动保持，支持导出与恢复会话、`keep_alive()` 手动保活、`logout()` 安全退出 |
 | 📚 常用查询 | 个人课表、教室课表、教室网格与空闲教室、学生信息、成绩、成绩明细、培养方案、教学楼 |
 | 🧱 类型化输出 | 全部返回冻结 dataclass，可 `to_dict()` 递归转字典 |
 | 🧵 多用户隔离 | 一个实例对应一个账号，实例内请求由可重入锁串行保护 |
@@ -81,6 +81,8 @@ python -m pip install -e ".[test]"
 | --- | --- | --- |
 | `get_captcha()` | `CaptchaImage` | 建立新会话，获取验证码图片 |
 | `login(username, password, captcha)` | `LoginResult` | 验证码登录 |
+| `get_cookies()` | `dict[str, str]` | 导出当前会话 Cookie |
+| `restore_session(cookies)` | `bool` | 使用 Cookie 恢复并验证会话 |
 | `keep_alive()` | `bool` | 手动会话保活 |
 | `logout()` | `None` | 退出并清空会话 |
 | `get_schedule(term, week=None)` | `Schedule` | 个人课表 |
@@ -167,6 +169,48 @@ client = JwxtClient(verify_ssl=False)
 **注意**：会话过期时抛 `SessionExpiredError` 并清空内部状态，需重新走验证码 + 登录流程。本包不提供后台保活线程，长驻程序请自行定时调用。
 
 **异常**：`SessionExpiredError`、`RequestError`。
+
+#### `get_cookies() -> dict[str, str]`
+
+返回当前客户端保存的全部 Cookie 副本。返回值仅包含字符串键值，可直接使用 JSON 序列化；没有 Cookie 时返回空字典。该方法不要求已经登录，因此也可能返回验证码阶段建立的临时会话 Cookie。
+
+修改返回的字典不会影响客户端内部会话。客户端关闭后调用会抛出 `RequestError`。
+
+#### `restore_session(cookies) -> bool`
+
+用之前保存的 Cookie 替换当前会话，并访问学生主页在线验证。Cookie 仍然有效时返回 `True`，同时将 `is_logged_in` 设置为 `True`，随后可以直接调用课表、成绩等查询接口。
+
+```python
+import json
+from pathlib import Path
+
+from jwxtapi import JwxtClient, SessionExpiredError
+
+cookie_file = Path("jwxt-cookies.json")
+
+# 首次验证码登录后保存
+with JwxtClient() as client:
+    client.get_captcha()
+    client.login("学号", "密码", "验证码")
+    cookie_file.write_text(
+        json.dumps(client.get_cookies(), ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+# 后续进程尝试复用；只有服务器确认会话有效后才进入登录状态
+with JwxtClient() as client:
+    cookies = json.loads(cookie_file.read_text(encoding="utf-8"))
+    try:
+        client.restore_session(cookies)
+        schedule = client.get_schedule("2025-2026-2", week=1)
+    except SessionExpiredError:
+        # Cookie 已过期，重新执行 get_captcha() + login()
+        pass
+```
+
+传入值必须是非空的字符串到字符串映射，否则抛出 `ValidationError`。Cookie 已过期时会清空会话并抛出 `SessionExpiredError`；验证页面结构异常时抛出 `ParseError`；网络或 HTTP 失败沿用 `RequestError`。
+
+> ⚠️ Cookie 在有效期内等同于登录凭据。请存放在受保护的位置，不要输出到日志、发送给他人或提交到版本控制系统。本包不会自动读写、加密或续期 Cookie 文件。
 
 #### `logout() -> None`
 

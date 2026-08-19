@@ -65,7 +65,7 @@ class JwxtClient:
             follow_redirects=False,
             transport=effective_transport,
             headers={
-                "User-Agent": "gduf-jwxt-api/0.2.0 (+https://github.com/LiangJZ1/gduf-jwxt-api)",
+                "User-Agent": "gduf-jwxt-api/0.3.0 (+https://github.com/LiangJZ1/gduf-jwxt-api)",
                 "Accept-Language": "zh-CN,zh;q=0.9",
             },
         )
@@ -140,6 +140,60 @@ class JwxtClient:
             self._require_login()
             response = self._request("GET", "/jsxsd/framework/blankPage.jsp", follow_redirects=True)
             self._raise_if_session_expired(response)
+            return True
+
+    def get_cookies(self) -> dict[str, str]:
+        """返回当前会话 Cookie 的可序列化副本。"""
+        with self._lock:
+            self._ensure_open()
+            cookies: dict[str, str] = {}
+            for cookie in self._client.cookies.jar:
+                if cookie.value is not None:
+                    cookies[cookie.name] = cookie.value
+            return cookies
+
+    def restore_session(self, cookies: Mapping[str, str]) -> bool:
+        """使用保存的 Cookie 恢复并在线验证登录会话。"""
+        with self._lock:
+            self._ensure_open()
+            if not isinstance(cookies, Mapping) or not cookies:
+                raise ValidationError("cookies 必须是非空映射")
+
+            normalized: dict[str, str] = {}
+            for name, value in cookies.items():
+                if not isinstance(name, str) or not name:
+                    raise ValidationError("Cookie 名称必须是非空字符串")
+                if not isinstance(value, str) or not value:
+                    raise ValidationError("Cookie 值必须是非空字符串")
+                normalized[name] = value
+
+            self._clear_session()
+            try:
+                for name, value in normalized.items():
+                    self._client.cookies.set(
+                        name,
+                        value,
+                        domain=self._client.base_url.host,
+                        path="/",
+                    )
+                response = self._request(
+                    "GET",
+                    "/jsxsd/framework/xsMain.jsp",
+                    follow_redirects=True,
+                )
+            except RequestError:
+                self._clear_session()
+                raise
+
+            if self._is_login_page(response.text):
+                self._clear_session()
+                raise SessionExpiredError("保存的会话已经过期，请重新获取验证码并登录")
+            if not self._is_student_home(response.text):
+                self._clear_session()
+                raise ParseError("会话验证响应不是学生主页，也不是登录页")
+
+            self._logged_in = True
+            self._grade_objects.clear()
             return True
 
     def get_student_info(self) -> StudentInfo:

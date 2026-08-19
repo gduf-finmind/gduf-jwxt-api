@@ -12,6 +12,8 @@ from jwxtapi import (
     CaptchaError,
     ClassroomGrid,
     JwxtClient,
+    ParseError,
+    RequestError,
     SessionExpiredError,
     ValidationError,
 )
@@ -94,6 +96,107 @@ def test_keep_alive_detects_expired_session() -> None:
         client.keep_alive()
     assert not client.is_logged_in
     client.close()
+
+
+def test_get_cookies_returns_independent_serializable_copy() -> None:
+    client = JwxtClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    client._client.cookies.set("JSESSIONID", "saved")
+
+    cookies = client.get_cookies()
+
+    assert cookies == {"JSESSIONID": "saved"}
+    cookies["JSESSIONID"] = "changed"
+    assert client.get_cookies() == {"JSESSIONID": "saved"}
+    client.close()
+
+
+def test_restore_session_validates_cookie_and_marks_client_logged_in() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, text=HOME)
+
+    client = JwxtClient(transport=httpx.MockTransport(handler))
+
+    assert client.restore_session({"JSESSIONID": "saved"})
+    assert client.is_logged_in
+    assert requests[0].url.path == "/jsxsd/framework/xsMain.jsp"
+    assert requests[0].headers["cookie"] == "JSESSIONID=saved"
+    client.close()
+
+
+def test_restore_session_keeps_cookie_rotated_by_server() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["cookie"] == "JSESSIONID=old"
+        return httpx.Response(
+            200,
+            text=HOME,
+            headers={"set-cookie": "JSESSIONID=new; Path=/"},
+        )
+
+    client = JwxtClient(transport=httpx.MockTransport(handler))
+    client.restore_session({"JSESSIONID": "old"})
+    assert client.get_cookies() == {"JSESSIONID": "new"}
+    client.close()
+
+
+def test_restore_session_rejects_expired_cookie_and_clears_state() -> None:
+    client = JwxtClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=LOGIN))
+    )
+
+    with pytest.raises(SessionExpiredError):
+        client.restore_session({"JSESSIONID": "expired"})
+
+    assert not client.is_logged_in
+    assert client.get_cookies() == {}
+    client.close()
+
+
+def test_restore_session_rejects_unrecognized_response_and_clears_state() -> None:
+    client = JwxtClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text="maintenance"))
+    )
+
+    with pytest.raises(ParseError):
+        client.restore_session({"JSESSIONID": "unknown"})
+
+    assert not client.is_logged_in
+    assert client.get_cookies() == {}
+    client.close()
+
+
+@pytest.mark.parametrize(
+    "cookies",
+    [
+        {},
+        [],
+        {"": "value"},
+        {"JSESSIONID": ""},
+        {1: "value"},
+        {"JSESSIONID": 1},
+    ],
+)
+def test_restore_session_validates_cookie_mapping(cookies: object) -> None:
+    client = JwxtClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    client._client.cookies.set("existing", "preserved")
+
+    with pytest.raises(ValidationError):
+        client.restore_session(cookies)  # type: ignore[arg-type]
+
+    assert client.get_cookies() == {"existing": "preserved"}
+    client.close()
+
+
+def test_cookie_session_methods_reject_closed_client() -> None:
+    client = JwxtClient(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+    client.close()
+
+    with pytest.raises(RequestError):
+        client.get_cookies()
+    with pytest.raises(RequestError):
+        client.restore_session({"JSESSIONID": "saved"})
 
 
 def test_get_student_info_requests_academic_card() -> None:
