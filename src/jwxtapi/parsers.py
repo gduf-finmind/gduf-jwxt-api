@@ -93,6 +93,7 @@ def parse_schedule(html: str, requested_term: str, requested_week: int | None) -
 
     entries: list[ScheduleEntry] = []
     period = 0
+    heading_occurrences: dict[str, int] = {}
     remarks: str | None = None
     for row in table.select("tr")[1:]:
         heading = row.find("th")
@@ -102,8 +103,12 @@ def parse_schedule(html: str, requested_term: str, requested_week: int | None) -
             continue
         if heading is None or len(cells) < 7:
             continue
-        period += 1
         period_name = _cell_text(heading)
+        period += 1
+        heading_occurrences[period_name] = heading_occurrences.get(period_name, 0) + 1
+        start_period, end_period = _schedule_period_span(
+            period_name, heading_occurrences[period_name], period
+        )
         for weekday, cell in enumerate(cells[:7], start=1):
             details = cell.select("div.kbcontent") or cell.select("div.kbcontent1")
             for detail in details:
@@ -129,11 +134,28 @@ def parse_schedule(html: str, requested_term: str, requested_week: int | None) -
                         weeks_text=weeks_text,
                         weeks=parse_weeks(weeks_text),
                         weekday=weekday,
-                        period=period,
+                        period=start_period,
                         period_name=period_name,
+                        period_code=f"{start_period:02d}{end_period:02d}",
+                        start_period=start_period,
+                        end_period=end_period,
                     )
                 )
     return Schedule(selected_term, requested_week, tuple(entries), remarks)
+
+
+def _schedule_period_span(name: str, occurrence: int, fallback_row: int) -> tuple[int, int]:
+    """将重复的大节标题映射为真实小节范围，兼容清远校区课表结构。"""
+    mapping = {
+        ("第一大节", 1): (1, 2),
+        ("第二大节", 1): (3, 4),
+        ("第二大节", 2): (5, 5),
+        ("第三大节", 1): (6, 7),
+        ("第三大节", 2): (8, 8),
+        ("第四大节", 1): (9, 10),
+        ("第五大节", 1): (11, 12),
+    }
+    return mapping.get((name.replace(" ", ""), occurrence), (fallback_row, fallback_row))
 
 
 def _classroom_grid_parts(html: str) -> tuple[list[str], list[ClassroomEntry]]:
@@ -181,6 +203,7 @@ def _classroom_grid_parts(html: str) -> tuple[list[str], list[ClassroomEntry]]:
                 raise ParseError("教室课表单元格超出节次网格")
             weekday = slot // periods_per_day + 1
             period = period_names[slot % periods_per_day]
+            period_span = _period_code_range(period) or (0, 0)
             for content in cell.select("div.kbcontent1, div.kbcontent"):
                 lines = [
                     _clean(line)
@@ -205,10 +228,30 @@ def _classroom_grid_parts(html: str) -> tuple[list[str], list[ClassroomEntry]]:
                         weeks=parse_weeks(weeks_text or ""),
                         class_name=class_name,
                         raw_text=raw_text,
+                        start_period=period_span[0],
+                        end_period=period_span[1],
                     )
                 )
             slot += colspan
     return classrooms, entries
+
+
+def _period_code_range(value: str) -> tuple[int, int] | None:
+    """解析 0102、1-2、5、0505 等教务节次编码。"""
+    text = _clean(value).replace("－", "-").replace("至", "-")
+    match = re.search(r"(\d+)\s*[-~]\s*(\d+)", text)
+    if match:
+        start, end = int(match.group(1)), int(match.group(2))
+        return (start, end) if start > 0 and end >= start else None
+    digits = "".join(char for char in text if char.isdigit())
+    if len(digits) >= 4 and len(digits) % 2 == 0:
+        middle = len(digits) // 2
+        start, end = int(digits[:middle]), int(digits[middle:])
+        return (start, end) if start > 0 and end >= start else None
+    if digits:
+        value_int = int(digits)
+        return (value_int, value_int) if value_int > 0 else None
+    return None
 
 
 def parse_classroom_entries(html: str) -> tuple[ClassroomEntry, ...]:

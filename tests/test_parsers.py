@@ -40,6 +40,21 @@ def test_parse_personal_schedule() -> None:
     assert schedule.items[0].weeks == tuple(range(1, 17))
 
 
+def test_parse_personal_schedule_maps_repeated_major_sections_to_real_periods() -> None:
+    """重复的第二、第三大节标题必须保留第5、8节独立小节。"""
+    headings = ("第一大节", "第二大节", "第二大节", "第三大节", "第三大节", "第四大节", "第五大节")
+    rows = "".join(
+        f'<tr><th>{heading}</th><td><div class="kbcontent">课程{index}<font title="周次(节次)">1-16(周)</font></div></td>'
+        + "<td></td>" * 6
+        + "</tr>"
+        for index, heading in enumerate(headings, start=1)
+    )
+    schedule = parse_schedule(f'<table id="kbtable"><tr><th></th>'
+        f'<th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th><th>日</th></tr>{rows}</table>', "2026-2027-1", None)
+    spans = [(item.start_period, item.end_period) for item in schedule.items]
+    assert spans == [(1, 2), (3, 4), (5, 5), (6, 7), (8, 8), (9, 10), (11, 12)]
+
+
 def _classroom_grid_html() -> str:
     periods = "".join(f"<td>{period}</td>" for _ in range(7) for period in ("0102", "0304"))
     weekdays = "".join(f'<th colspan="2">星期{day}</th>' for day in "一二三四五六日")

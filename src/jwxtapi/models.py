@@ -31,6 +31,9 @@ class ScheduleEntry(DataModel):
     weekday: int
     period: int
     period_name: str
+    period_code: str = ""
+    start_period: int = 0
+    end_period: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +61,8 @@ class ClassroomEntry(DataModel):
     weeks: tuple[int, ...]
     class_name: str | None
     raw_text: str
+    start_period: int = 0
+    end_period: int = 0
 
 
 @dataclass(frozen=True, slots=True)
