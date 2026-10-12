@@ -361,6 +361,24 @@ class JwxtClient:
             self._raise_if_session_expired(response)
             return parse_grade_detail(response.text)
 
+    def get_cached_grade_detail(self, grade: Grade) -> GradeDetail:
+        """使用调用方可信缓存中的课程字段查询当前登录会话的成绩明细。
+
+        调用方必须保证缓存属于当前已认证学生且未过期；本方法只使用固定上游路径
+        和三个课程参数，不接受任意 URL，也不修改原 get_grade_detail 的对象归属契约。
+        """
+        with self._lock:
+            self._require_login()
+            if not isinstance(grade, Grade) or not grade.has_detail:
+                raise ValidationError("缓存成绩没有可用的明细标识")
+            response = self._request(
+                "GET", "/jsxsd/kscj/pscj_list.do",
+                params={"xs0101id": grade.student_id, "jx0404id": grade.teaching_task_id,
+                        "zcj": grade.detail_total_score}, follow_redirects=True,
+            )
+            self._raise_if_session_expired(response)
+            return parse_grade_detail(response.text)
+
     def get_training_plan(self, extra_form: Mapping[str, str] | None = None) -> TrainingPlan:
         with self._lock:
             self._require_login()
