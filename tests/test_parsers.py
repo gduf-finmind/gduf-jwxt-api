@@ -88,14 +88,14 @@ def test_same_container_preserves_alternating_courses(separator: str) -> None:
 def test_mixed_containers_and_multiple_week_groups(nested: bool) -> None:
     """混合及嵌套容器不丢课、不重复；课程名里的连字符不触发切段。"""
     parts = [
-        f'<div class="{kind}">{_course_html(name, "老师", weeks, "教室")}</div>'
+        f'<div class="{kind} course">{_course_html(name, "老师", weeks, "教室")}</div>'
         for kind, name, weeks in [('kbcontent', 'Web-程序设计', '3-4(周)'),
                                   ('kbcontent1', '数据库', '6(周)'),
                                   ('kbcontent', '实验', '8,10(周)')]
     ]
     content = ''.join(parts)
     if nested:
-        content = f'<div class="kbcontent1"><span>{content}</span></div>'
+        content = f'<div class="kbcontent1"><div><span>{content}</span></div></div>'
     result = parse_schedule(_friday_schedule(content), '2026-2027-1', None)
     assert [(c.course_name, c.weeks) for c in result.items] == [
         ('Web-程序设计', (3, 4)), ('数据库', (6,)), ('实验', (8, 10)),

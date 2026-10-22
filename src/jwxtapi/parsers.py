@@ -5,7 +5,8 @@ from collections.abc import Iterable
 from copy import copy
 from urllib.parse import parse_qs, urlparse
 
-from bs4 import BeautifulSoup, Comment, NavigableString, Tag
+from bs4 import BeautifulSoup, Tag
+from bs4.element import Comment, NavigableString
 
 from .exceptions import ParseError
 from .models import (
@@ -80,6 +81,21 @@ def _direct_text_before_font(container: Tag) -> str:
     return " ".join(parts)
 
 
+def _is_schedule_container(node: Tag) -> bool:
+    """按完整类名识别课程容器，兼容缺失、字符串和列表形式的 class 属性。
+
+    BeautifulSoup 的属性类型包含 None；先收窄类型再比较，避免将字符串
+    当作字符集合，也保证严格类型检查能验证这条解析路径。
+    """
+    if node.name != "div":
+        return False
+    classes = node.get("class")
+    if classes is None:
+        return False
+    tokens = classes.split() if isinstance(classes, str) else classes
+    return bool({"kbcontent", "kbcontent1"}.intersection(tokens))
+
+
 def _schedule_fragments(cell: Tag) -> list[Tag]:
     """按容器和显式分隔线拆分课程，保留每段的字段归属。
 
@@ -114,9 +130,7 @@ def _schedule_fragments(cell: Tag) -> list[Tag]:
         if node.name in {"font", "br"}:
             current.append(copy(node))
             return
-        is_course = node.name == "div" and bool(
-            {"kbcontent", "kbcontent1"}.intersection(node.get("class", []))
-        )
+        is_course = _is_schedule_container(node)
         if is_course:
             flush()
         for child in node.children:
@@ -128,8 +142,7 @@ def _schedule_fragments(cell: Tag) -> list[Tag]:
     # 从最外层课程容器开始，内部容器由递归遍历处理，避免重复课程。
     for container in cell.select("div.kbcontent, div.kbcontent1"):
         if any(
-            parent is not cell and parent.name == "div"
-            and {"kbcontent", "kbcontent1"}.intersection(parent.get("class", []))
+            parent is not cell and _is_schedule_container(parent)
             for parent in container.parents if isinstance(parent, Tag)
         ):
             continue
