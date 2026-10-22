@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from copy import copy
 from urllib.parse import parse_qs, urlparse
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
 from .exceptions import ParseError
 from .models import (
@@ -79,6 +80,63 @@ def _direct_text_before_font(container: Tag) -> str:
     return " ".join(parts)
 
 
+def _schedule_fragments(cell: Tag) -> list[Tag]:
+    """按容器和显式分隔线拆分课程，保留每段的字段归属。
+
+    同一容器可包含单双周的多门课程；递归展开普通包装标签，font 作为整体
+    保留，避免把老师、教室拆成课程名。嵌套课程容器只遍历一次。
+    """
+    soup = BeautifulSoup("", "html.parser")
+    fragments: list[Tag] = []
+    current = soup.new_tag("div")
+
+    def flush() -> None:
+        """结束当前非空课程片段，并为下一门课程创建独立容器。"""
+        nonlocal current
+        if _cell_text(current):
+            fragments.append(current)
+        current = soup.new_tag("div")
+
+    def visit(node: Tag | NavigableString) -> None:
+        """按文档顺序读取节点，仅在独立分隔文本或课程容器边界切段。"""
+        if isinstance(node, Comment):
+            return
+        if isinstance(node, NavigableString):
+            for part in str(node).splitlines(keepends=True):
+                if re.fullmatch(r"\s*[-—－_─]{3,}\s*", part):
+                    flush()
+                else:
+                    current.append(NavigableString(part))
+            return
+        if node.name == "hr":
+            flush()
+            return
+        if node.name in {"font", "br"}:
+            current.append(copy(node))
+            return
+        is_course = node.name == "div" and bool(
+            {"kbcontent", "kbcontent1"}.intersection(node.get("class", []))
+        )
+        if is_course:
+            flush()
+        for child in node.children:
+            if isinstance(child, (Tag, NavigableString)):
+                visit(child)
+        if is_course:
+            flush()
+
+    # 从最外层课程容器开始，内部容器由递归遍历处理，避免重复课程。
+    for container in cell.select("div.kbcontent, div.kbcontent1"):
+        if any(
+            parent is not cell and parent.name == "div"
+            and {"kbcontent", "kbcontent1"}.intersection(parent.get("class", []))
+            for parent in container.parents if isinstance(parent, Tag)
+        ):
+            continue
+        visit(container)
+    return fragments
+
+
 def parse_schedule(html: str, requested_term: str, requested_week: int | None) -> Schedule:
     soup = _soup(html)
     table = soup.select_one("#kbtable")
@@ -110,16 +168,18 @@ def parse_schedule(html: str, requested_term: str, requested_week: int | None) -
             period_name, heading_occurrences[period_name], period
         )
         for weekday, cell in enumerate(cells[:7], start=1):
-            details = cell.select("div.kbcontent") or cell.select("div.kbcontent1")
+            details = _schedule_fragments(cell)
             for detail in details:
                 raw = _clean(detail.get_text(" ", strip=True))
                 if not raw:
                     continue
                 course_name = _direct_text_before_font(detail)
-                fields = {
-                    str(font.get("title")): _clean(font.get_text(" ", strip=True))
-                    for font in detail.find_all("font")
-                }
+                fields: dict[str, str] = {}
+                for font in detail.find_all("font"):
+                    title = str(font.get("title"))
+                    if title in {"老师", "教室", "周次(节次)"} and title in fields:
+                        raise ParseError("个人课表课程字段重复，无法确定多门课程的分隔边界")
+                    fields[title] = _clean(font.get_text(" ", strip=True))
                 if not course_name:
                     lines = [_clean(part) for part in detail.get_text("\n", strip=True).splitlines()]
                     course_name = next((part for part in lines if part), "")

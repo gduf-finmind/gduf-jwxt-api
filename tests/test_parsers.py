@@ -1,5 +1,4 @@
 import pytest
-
 from jwxtapi import ParseError
 from jwxtapi.parsers import (
     parse_classroom_entries,
@@ -53,6 +52,61 @@ def test_parse_personal_schedule_maps_repeated_major_sections_to_real_periods() 
         f'<th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th><th>日</th></tr>{rows}</table>', "2026-2027-1", None)
     spans = [(item.start_period, item.end_period) for item in schedule.items]
     assert spans == [(1, 2), (3, 4), (5, 5), (6, 7), (8, 8), (9, 10), (11, 12)]
+
+
+def _friday_schedule(content: str) -> str:
+    """构造周五第6至7节单元格，复现同一时段的不同周次课程。"""
+    return (
+        '<table id="kbtable"><tr><th></th></tr><tr><th>第三大节</th>'
+        + '<td></td>' * 4 + f'<td>{content}</td><td></td><td></td></tr></table>'
+    )
+
+
+def _course_html(name: str, teacher: str, weeks: str, room: str) -> str:
+    """使用教务页面字段标签生成一门课，便于组合真实结构的多课程场景。"""
+    return (
+        f'<span>{name}</span><br><font title="老师">{teacher}</font><br>'
+        f'<font title="周次(节次)">{weeks}</font><br>'
+        f'<font title="教室">{room}</font>'
+    )
+
+
+@pytest.mark.parametrize("separator", ['<br>----------------<br>', '<hr>', '<br><span>———</span><br>'])
+def test_same_container_preserves_alternating_courses(separator: str) -> None:
+    """同容器单双周课程必须分别保留名称、老师、教室和真实节次。"""
+    odd = _course_html('Web程序设计', '黄老师', '1,3,5,7,9,11,13,15(周)', '敏学414')
+    even = _course_html('数据库原理与应用', '李老师', '2,4,6,8,10,12,14,16(双周)', '敏学317')
+    result = parse_schedule(_friday_schedule(f'<div class="kbcontent">{odd}{separator}{even}</div>'), '2026-2027-1', None)
+    assert [(c.course_name, c.teacher, c.classroom, c.weeks) for c in result.items] == [
+        ('Web程序设计', '黄老师', '敏学414', tuple(range(1, 17, 2))),
+        ('数据库原理与应用', '李老师', '敏学317', tuple(range(2, 17, 2))),
+    ]
+    assert {(c.weekday, c.start_period, c.end_period) for c in result.items} == {(5, 6, 7)}
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_mixed_containers_and_multiple_week_groups(nested: bool) -> None:
+    """混合及嵌套容器不丢课、不重复；课程名里的连字符不触发切段。"""
+    parts = [
+        f'<div class="{kind}">{_course_html(name, "老师", weeks, "教室")}</div>'
+        for kind, name, weeks in [('kbcontent', 'Web-程序设计', '3-4(周)'),
+                                  ('kbcontent1', '数据库', '6(周)'),
+                                  ('kbcontent', '实验', '8,10(周)')]
+    ]
+    content = ''.join(parts)
+    if nested:
+        content = f'<div class="kbcontent1"><span>{content}</span></div>'
+    result = parse_schedule(_friday_schedule(content), '2026-2027-1', None)
+    assert [(c.course_name, c.weeks) for c in result.items] == [
+        ('Web-程序设计', (3, 4)), ('数据库', (6,)), ('实验', (8, 10)),
+    ]
+
+
+def test_ambiguous_repeated_fields_raise_instead_of_overwriting() -> None:
+    """缺少可靠分隔边界时明确报错，禁止第一门课名称混用第二门课字段。"""
+    content = _course_html('Web', '黄老师', '1-16单周', '414') + '<br>' + _course_html('数据库', '李老师', '2-16双周', '317')
+    with pytest.raises(ParseError, match='分隔边界'):
+        parse_schedule(_friday_schedule(f'<div class="kbcontent">{content}</div>'), '2026-2027-1', None)
 
 
 def _classroom_grid_html() -> str:
