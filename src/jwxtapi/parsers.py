@@ -139,8 +139,16 @@ def _schedule_fragments(cell: Tag) -> list[Tag]:
         if is_course:
             flush()
 
+    # 同一逻辑编号的 -1/-2 分别为简略和详细视图；详细视图虽被 CSS 隐藏仍是完整数据。
+    containers = cell.select("div.kbcontent, div.kbcontent1")
+    detailed_ids = {str(node.get("id", ""))[:-2] for node in containers
+                    if "kbcontent" in node.get("class", []) and str(node.get("id", "")).endswith("-2")}
     # 从最外层课程容器开始，内部容器由递归遍历处理，避免重复课程。
-    for container in cell.select("div.kbcontent, div.kbcontent1"):
+    for container in containers:
+        identifier = str(container.get("id", ""))
+        if ("kbcontent1" in container.get("class", []) and identifier.endswith("-1")
+                and identifier[:-2] in detailed_ids):
+            continue
         if any(
             parent is not cell and _is_schedule_container(parent)
             for parent in container.parents if isinstance(parent, Tag)

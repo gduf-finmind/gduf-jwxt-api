@@ -109,6 +109,24 @@ def test_ambiguous_repeated_fields_raise_instead_of_overwriting() -> None:
         parse_schedule(_friday_schedule(f'<div class="kbcontent">{content}</div>'), '2026-2027-1', None)
 
 
+def test_personal_schedule_prefers_detailed_view_of_same_logical_cell() -> None:
+    """真实页面同时提供简略和含教师的隐藏视图，两者是同一课程而非多教师授课。
+
+    同格的单双周课程仍必须分别保留；其他未配对课程容器不能被丢弃。
+    """
+    odd = _course_html('Web程序设计', '教师甲', '1,3,5,7,9,11,13,15(周)', '敏学414')
+    even = _course_html('数据库原理与应用', '教师乙', '2,4,6,8,10,12,14,16(双周)', '敏学317')
+    detailed = odd + '<br>---------------------<br>' + even
+    brief = detailed.replace('<font title="老师">教师甲</font>', '').replace('<font title="老师">教师乙</font>', '')
+    html = _friday_schedule(f'<div class="kbcontent1" id="logical-cell-1">{brief}</div>'
+                            f'<div class="kbcontent" id="logical-cell-2" style="display: none;">{detailed}</div>')
+    schedule = parse_schedule(html, '2026-2027-1', None)
+    assert [(item.course_name, item.teacher, item.weeks) for item in schedule.items] == [
+        ('Web程序设计', '教师甲', tuple(range(1, 17, 2))),
+        ('数据库原理与应用', '教师乙', tuple(range(2, 17, 2))),
+    ]
+
+
 def _classroom_grid_html() -> str:
     periods = "".join(f"<td>{period}</td>" for _ in range(7) for period in ("0102", "0304"))
     weekdays = "".join(f'<th colspan="2">星期{day}</th>' for day in "一二三四五六日")
